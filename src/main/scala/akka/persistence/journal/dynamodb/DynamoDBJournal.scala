@@ -7,6 +7,7 @@ import akka.persistence.journal.AsyncWriteJournal
 import akka.serialization.SerializationExtension
 import akka.util.ByteString
 import com.amazonaws.AmazonServiceException
+import com.amazonaws.auth.{InstanceProfileCredentialsProvider, AWSCredentialsProvider}
 import com.amazonaws.services.dynamodbv2.model._
 import com.sclasen.spray.aws.dynamodb.DynamoDBClient
 import com.sclasen.spray.aws.dynamodb.DynamoDBClientProps
@@ -122,7 +123,7 @@ class DynamoDBJournal extends AsyncWriteJournal with DynamoDBRecovery with Dynam
 
 }
 
-class InstrumentedDynamoDBClient(props: DynamoDBClientProps) extends DynamoDBClient(props) {
+class InstrumentedDynamoDBClient(props: DynamoDBClientProps, overrideCredentialsProvider: Option[AWSCredentialsProvider] = None) extends DynamoDBClient(props, overrideCredentialsProvider) {
   def logging[T](op: String)(f: Future[Either[AmazonServiceException, T]]): Future[Either[AmazonServiceException, T]] = {
     f.onFailure {
       case e: Exception => props.system.log.error(e, "error in async op {}", op)
@@ -173,7 +174,11 @@ object DynamoDBJournal {
       context,
       config.getString(Endpoint)
     )
-    new InstrumentedDynamoDBClient(props)
+    if (props.key.isEmpty) {
+      system.log.info("Using InstanceProfileCredentialsProvider")
+      new InstrumentedDynamoDBClient(props, Some(new InstanceProfileCredentialsProvider))
+    } else
+      new InstrumentedDynamoDBClient(props)
   }
 
 
