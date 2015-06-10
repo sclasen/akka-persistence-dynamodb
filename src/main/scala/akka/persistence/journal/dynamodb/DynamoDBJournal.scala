@@ -35,20 +35,15 @@ class DynamoDBJournal extends AsyncWriteJournal with DynamoDBRecovery with Dynam
 
   def asyncWriteMessages(messages: immutable.Seq[PersistentRepr]): Future[Unit] = writeMessages(messages)
 
-  //do we need to store the confirmations in a separate key to avoid hot keys?
-  def asyncWriteConfirmations(confirmations: immutable.Seq[PersistentConfirmation]): Future[Unit] = writeConfirmations(confirmations)
-
-  def asyncDeleteMessages(messageIds: immutable.Seq[PersistentId], permanent: Boolean): Future[Unit] = deleteMessages(messageIds, permanent)
-
-  def asyncDeleteMessagesTo(processorId: String, toSequenceNr: Long, permanent: Boolean): Future[Unit] = {
-    log.debug("at=delete-messages-to processorId={} to={} perm={}", processorId, toSequenceNr, permanent)
-    readLowestSequenceNr(processorId).flatMap {
+  def asyncDeleteMessagesTo(persistenceId: String, toSequenceNr: Long, permanent: Boolean): Future[Unit] = {
+    log.debug("at=delete-messages-to persistenceId={} to={} perm={}", persistenceId, toSequenceNr, permanent)
+    readLowestSequenceNr(persistenceId).flatMap {
       fromSequenceNr =>
         val asyncDeletions = (fromSequenceNr to toSequenceNr).grouped(extension.settings.journal.maxDeletionBatchSize).map {
           group =>
-            asyncDeleteMessages(group.map(sequenceNr => PersistentIdImpl(processorId, sequenceNr)), permanent)
+            deleteMessages(group.map(sequenceNr => PersistentKey(persistenceId, sequenceNr)), permanent)
         }
-        Future.sequence(asyncDeletions).map(_ => log.debug("finished asyncDeleteMessagesTo {} {} {}", processorId, toSequenceNr, permanent))
+        Future.sequence(asyncDeletions).map(_ => log.debug("finished asyncDeleteMessagesTo {} {} {}", persistenceId, toSequenceNr, permanent))
     }
   }
 
@@ -74,7 +69,7 @@ class DynamoDBJournal extends AsyncWriteJournal with DynamoDBRecovery with Dynam
   }
 
   def backoff(retries: Int, what: String) {
-    if(retries == 0) Thread.`yield`()
+    if (retries == 0) Thread.`yield`()
     else {
       val sleep = math.pow(2, retries).toLong
       log.warning("at=backoff request={} sleep={}", what, sleep)
@@ -145,7 +140,6 @@ object DynamoDBJournal {
   val Key = "key"
   val ProcessorId = "processorId"
   val SequenceNr = "sequenceNr"
-  val Confirmations = "confirmations"
   val Deleted = "deleted"
   val Payload = "payload"
   // config names
@@ -178,3 +172,6 @@ object DynamoDBJournal {
 
 
 }
+
+
+case class PersistentKey(persistenceId: String, sequenceNr: Long)

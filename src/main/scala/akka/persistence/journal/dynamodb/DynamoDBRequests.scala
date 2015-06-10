@@ -1,11 +1,12 @@
 package akka.persistence.journal.dynamodb
 
-import DynamoDBJournal._
-import akka.persistence.{PersistentConfirmation, PersistentId, PersistentRepr}
-import collection.JavaConverters._
+import java.util.{HashMap => JHMap, List => JList, Map => JMap}
+
+import akka.persistence.PersistentRepr
 import com.amazonaws.services.dynamodbv2.model._
-import java.util.{HashMap => JHMap, Map => JMap, List => JList}
-import scala.collection.{mutable, immutable}
+import akka.persistence.journal.dynamodb.DynamoDBJournal._
+import scala.collection.JavaConverters._
+import scala.collection.{immutable, mutable}
 import scala.concurrent.Future
 
 
@@ -59,51 +60,40 @@ trait DynamoDBRequests {
 
   def batchWrite(r: BatchWriteItemRequest, retriesRemaining: Int = 10): Future[BatchWriteItemResult] = withBackoff(r, retriesRemaining)(dynamo.batchWriteItem)
 
-  def writeConfirmations(confirmations: immutable.Seq[PersistentConfirmation]): Future[Unit] = unitSequence {
-    confirmations.groupBy(c => (c.processorId, c.sequenceNr)).map {
-      case ((processorId, sequenceNr), confirms) =>
-        val key = fields(Key -> messageKey(processorId, sequenceNr))
-        val update = fields(Confirmations -> setAdd(SS(confirmations.map(_.channelId))))
-        updateItem(updateReq(key, update)).map {
-          result => log.debug("at=confirmed key={} update={}", key, update)
-        }
-    }
-  }
-
-  def deleteMessages(messageIds: immutable.Seq[PersistentId], permanent: Boolean): Future[Unit] = unitSequence {
+  def deleteMessages(messageIds: immutable.Seq[PersistentKey], permanent: Boolean): Future[Unit] = unitSequence {
     messageIds.map {
       msg =>
         if (permanent) {
           deleteItem(permanentDeleteToDelete(msg)).map {
-            _ => log.debug("at=permanent-delete-item  processorId={} sequenceId={}", msg.processorId, msg.sequenceNr)
+            _ => log.debug("at=permanent-delete-item  processorId={} sequenceId={}", msg.persistenceId, msg.sequenceNr)
           }
         } else {
           updateItem(impermanentDeleteToUpdate(msg)).map {
-            _ => log.debug("at=mark-delete-item  processorId={} sequenceId={}", msg.processorId, msg.sequenceNr)
+            _ => log.debug("at=mark-delete-item  processorId={} sequenceId={}", msg.persistenceId, msg.sequenceNr)
           }
         }.flatMap {
           _ =>
             val item = toLSItem(msg)
             val put = new PutItemRequest().withTableName(journalTable).withItem(item)
-            putItem(put).map(_ => log.debug("at=update-sequence-low-shard processorId={} sequenceId={}", msg.processorId, msg.sequenceNr))
+            putItem(put).map(_ => log.debug("at=update-sequence-low-shard processorId={} sequenceId={}", msg.persistenceId, msg.sequenceNr))
         }
     }
   }
 
 
   def toMsgItem(repr: PersistentRepr): Item = fields(
-    Key -> messageKey(repr.processorId, repr.sequenceNr),
+    Key -> messageKey(repr.persistenceId, repr.sequenceNr),
     Payload -> B(serialization.serialize(repr).get),
     Deleted -> S(false)
   )
 
   def toHSItem(repr: PersistentRepr): Item = fields(
-    Key -> highSeqKey(repr.processorId, repr.sequenceNr % sequenceShards),
+    Key -> highSeqKey(repr.persistenceId, repr.sequenceNr % sequenceShards),
     SequenceNr -> N(repr.sequenceNr)
   )
 
-  def toLSItem(id: PersistentId): Item = fields(
-    Key -> lowSeqKey(id.processorId, id.sequenceNr % sequenceShards),
+  def toLSItem(id: PersistentKey): Item = fields(
+    Key -> lowSeqKey(id.persistenceId, id.sequenceNr % sequenceShards),
     SequenceNr -> N(id.sequenceNr)
   )
 
@@ -123,15 +113,15 @@ trait DynamoDBRequests {
     .withRequestItems(items)
     .withReturnConsumedCapacity(ReturnConsumedCapacity.TOTAL)
 
-  def permanentDeleteToDelete(id: PersistentId): DeleteItemRequest = {
+  def permanentDeleteToDelete(id: PersistentKey): DeleteItemRequest = {
     log.debug("delete permanent {}", id)
-    val key = fields(Key -> messageKey(id.processorId, id.sequenceNr))
+    val key = fields(Key -> messageKey(id.persistenceId, id.sequenceNr))
     new DeleteItemRequest().withTableName(journalTable).withKey(key)
   }
 
-  def impermanentDeleteToUpdate(id: PersistentId): UpdateItemRequest = {
+  def impermanentDeleteToUpdate(id: PersistentKey): UpdateItemRequest = {
     log.debug("delete {}", id)
-    val key = fields(Key -> messageKey(id.processorId, id.sequenceNr))
+    val key = fields(Key -> messageKey(id.persistenceId, id.sequenceNr))
     val updates = fields(Deleted -> new AttributeValueUpdate().withAction(AttributeAction.PUT).withValue(S(true)))
     new UpdateItemRequest().withTableName(journalTable).withKey(key).withAttributeUpdates(updates)
   }

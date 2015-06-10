@@ -10,25 +10,21 @@ crossScalaVersions := Seq("2.11.6", "2.10.4")
 
 parallelExecution in Test := false
 
+val akkaVersion = "2.4-M1"
+
 //resolvers += "Sonatype OSS Snapshots" at "https://oss.sonatype.org/content/repositories/snapshots"
 
 resolvers += "spray repo" at "http://repo.spray.io"
 
-libraryDependencies += "com.sclasen" %% "spray-dynamodb" % "0.3.2" % "compile"
-
-libraryDependencies += "com.typesafe.akka" %% "akka-persistence-experimental" % "2.3.4" % "compile"
-
-libraryDependencies += "com.typesafe.akka" %% "akka-testkit" % "2.3.4" % "test,it"
-
-libraryDependencies += "org.scalatest" %% "scalatest" % "2.1.7" % "test,it"
-
-libraryDependencies += "commons-io" % "commons-io" % "2.4" % "test,it"
+libraryDependencies ++= Seq(
+  "com.sclasen" %% "spray-dynamodb" % "0.3.2",
+  "com.typesafe.akka" %% "akka-persistence-experimental" % akkaVersion % "compile",
+  "org.scalatest" %% "scalatest" % "2.1.7" % "test,it",
+  "com.typesafe.akka" %% "akka-persistence-experimental-tck" % akkaVersion % "test,it",
+  "com.github.dnvriend" %% "akka-persistence-inmemory" % "1.0.0" % "test,it"
+)
 
 resolvers += "krasserm at bintray" at "http://dl.bintray.com/krasserm/maven"
-
-libraryDependencies += "com.github.krasserm" %% "akka-persistence-testkit" % "0.3.2" % "test"
-
-parallelExecution in Test := false
 
 pomExtra := (
   <url>http://github.com/sclasen/akka-persistence-dynamodb</url>
@@ -60,4 +56,4 @@ publishTo <<= version {
 }
 
 
-val root = Project("akka-persistence-dynamodb", file(".")).configs(IntegrationTest).settings(Defaults.itSettings:_*)
+val root = Project("akka-persistence-dynamodb", file(".")).configs(IntegrationTest).settings(Defaults.itSettings: _*)
