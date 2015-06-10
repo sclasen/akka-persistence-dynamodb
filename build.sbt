@@ -4,9 +4,9 @@ name := "akka-persistence-dynamodb"
 
 version := "0.3.4-SNAPSHOT"
 
-scalaVersion := "2.11.1"
+scalaVersion := "2.11.6"
 
-crossScalaVersions := Seq("2.11.1", "2.10.4")
+crossScalaVersions := Seq("2.11.6", "2.10.4")
 
 parallelExecution in Test := false
 
