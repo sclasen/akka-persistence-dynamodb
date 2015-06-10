@@ -1,1 +1,1 @@
-dynamo: java -Djava.library.path=dynamodb-local/dynamodb_local_$DYNAMODB_RELEASE/DynamoDBLocal_lib -jar dynamodb-local/dynamodb_local_$DYNAMODB_RELEASE/DynamoDBLocal.jar -inMemory
+dynamo: java -Djava.library.path=dynamodb-local/dynamodb_local_$DYNAMODB_RELEASE/DynamoDBLocal_lib -jar dynamodb-local/DynamoDBLocal.jar -inMemory
