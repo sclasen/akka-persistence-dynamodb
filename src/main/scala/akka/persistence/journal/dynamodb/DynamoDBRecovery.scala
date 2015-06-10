@@ -58,7 +58,7 @@ trait DynamoDBRecovery extends AsyncRecovery {
     //there will be replayParallelism number of gets
     val gets = batchKeys.grouped(maxDynamoBatchGet).map {
       keys =>
-        val ka = new KeysAndAttributes().withKeys(keys.map(_._2).asJava).withConsistentRead(true).withAttributesToGet(Key, Payload, Deleted, Confirmations)
+        val ka = new KeysAndAttributes().withKeys(keys.map(_._2).asJava).withConsistentRead(true).withAttributesToGet(Key, Payload, Deleted)
         val get = batchGetReq(Collections.singletonMap(journalTable, ka))
         batchGet(get).flatMap(r => getUnprocessedItems(r)).map {
           result => mapBatch(result.getResponses.get(journalTable))
@@ -81,10 +81,7 @@ trait DynamoDBRecovery extends AsyncRecovery {
       payload =>
         val repr = persistentFromByteBuffer(payload.getB)
         val isDeleted = item.get(Deleted).getS == "true"
-        val confirmations = item.asScala.get(Confirmations).map {
-          ca => ca.getSS.asScala.to[immutable.Seq]
-        }.getOrElse(immutable.Seq[String]())
-        repr.update(deleted = isDeleted, confirms = confirmations)
+        repr.update(deleted = isDeleted)
     }
   }
 

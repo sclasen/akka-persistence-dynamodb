@@ -1,19 +1,19 @@
 package akka.persistence.journal.dynamodb
 
-import DynamoDBJournal._
 import akka.actor.ActorSystem
-import akka.testkit.TestKit
+import akka.persistence.journal.{JournalSpec, JournalPerfSpec}
+import akka.persistence.journal.dynamodb.DynamoDBJournal._
 import com.amazonaws.services.dynamodbv2.model._
+import com.typesafe.config.ConfigFactory
+import org.scalatest.{BeforeAndAfterEach, Suite}
+
 import scala.concurrent.Await
 import scala.concurrent.duration._
-import org.scalatest.{Suite, BeforeAndAfterEach}
-import com.typesafe.config.{ConfigFactory, Config}
-import akka.persistence.journal.JournalSpec
 
 trait DynamoDBSpec extends BeforeAndAfterEach {
   this: Suite =>
 
-  val system:ActorSystem
+  val system: ActorSystem
 
   override def beforeEach(): Unit = {
     val config = system.settings.config.getConfig(Conf)
@@ -23,7 +23,9 @@ trait DynamoDBSpec extends BeforeAndAfterEach {
       .withTableName(table)
       .withKeySchema(DynamoDBJournal.schema)
       .withAttributeDefinitions(DynamoDBJournal.schemaAttributes)
-      .withProvisionedThroughput(new ProvisionedThroughput(10, 10))
+      .withProvisionedThroughput(new ProvisionedThroughput()
+      .withReadCapacityUnits(10000L)
+      .withWriteCapacityUnits(10000L))
     import system.dispatcher
 
     val setup = client.sendListTables(new ListTablesRequest()).flatMap {
@@ -46,6 +48,4 @@ trait DynamoDBSpec extends BeforeAndAfterEach {
   }
 }
 
-class DynamoDBJournalSpec extends JournalSpec with DynamoDBSpec{
-  override lazy val config: Config = ConfigFactory.load()
-}
+class DynamoDBJournalSpec extends JournalSpec(ConfigFactory.load()) with DynamoDBSpec
