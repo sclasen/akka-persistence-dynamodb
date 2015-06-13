@@ -73,15 +73,19 @@ trait DynamoDBRequests {
   def deleteMessages(messageIds: immutable.Seq[PersistentId], permanent: Boolean): Future[Unit] = unitSequence {
     messageIds.map {
       msg =>
-        if (permanent) {
-          deleteItem(permanentDeleteToDelete(msg)).map {
-            _ => log.debug("at=permanent-delete-item  processorId={} sequenceId={}", msg.processorId, msg.sequenceNr)
-          }
-        } else {
-          updateItem(impermanentDeleteToUpdate(msg)).map {
-            _ => log.debug("at=mark-delete-item  processorId={} sequenceId={}", msg.processorId, msg.sequenceNr)
-          }
-        }.flatMap {
+        val result = permanent match {
+          case true =>
+            deleteItem(permanentDeleteToDelete(msg)).map { resp =>
+              log.debug("at=permanent-delete-item  processorId={} sequenceId={}", msg.processorId, msg.sequenceNr)
+              resp
+            }
+          case false =>
+            updateItem(impermanentDeleteToUpdate(msg)).map { resp =>
+              log.debug("at=mark-delete-item  processorId={} sequenceId={}", msg.processorId, msg.sequenceNr)
+              resp
+            }
+        }
+        result.flatMap {
           _ =>
             val item = toLSItem(msg)
             val put = new PutItemRequest().withTableName(journalTable).withItem(item)
