@@ -18,54 +18,54 @@ trait DynamoDBRecovery extends AsyncRecovery {
 
   def asyncReplayMessages(processorId: String, fromSequenceNr: Long, toSequenceNr: Long, max: Long)(replayCallback: (PersistentRepr) => Unit): Future[Unit] = logging {
     log.debug(s"in=replay akka wanted: for=$processorId, from=$fromSequenceNr, to=$toSequenceNr, max=$max")
-    if (fromSequenceNr > toSequenceNr) return Future.successful(())
     var delivered = 0L
     var maxDeliveredSeq = 0L
-    var looped = 0L
     asyncReadHighestSequenceNr(processorId, fromSequenceNr).flatMap {
       highSeqNr =>
         log.debug(s"in=replay for=$processorId, highSeqNr=$highSeqNr")
         if (fromSequenceNr > highSeqNr) {
-          log.warning(s"in=replay for=$processorId. requested min=$fromSequenceNr > actual max=$highSeqNr")
-          return Future.successful(())
+          log.debug(s"in=replay for=$processorId. requested min=$fromSequenceNr > actual max=$highSeqNr")
+          Future.successful()
         }
-        readLowestSequenceNr(processorId).flatMap {
-          lowSeqNr =>
-            val calculatedLowSeqNr = lowSeqNr.max(fromSequenceNr)
-            log.debug(s"in=replay for=$processorId, lowSeqNr=$lowSeqNr, recalculatedLowSeqNr=$calculatedLowSeqNr")
-            log.debug("in=replay for={}, from={}, to={}", processorId, lowSeqNr, highSeqNr)
-            getReplayBatch(processorId, calculatedLowSeqNr, highSeqNr).map {
-              replayBatch =>
-                replayBatch.keys.foreach {
-                  case (sequenceNr, key) =>
-                    val k = key.get(Key)
-                    Option(replayBatch.batch.get(k)).map {
-                      item =>
-                        val repr = readPersistentRepr(item)
-                        repr.foreach {
-                          r =>
-                            if (delivered < max && maxDeliveredSeq < highSeqNr) {
-                              replayCallback(r)
-                              delivered += 1
-                              maxDeliveredSeq = r.sequenceNr
-                              log.debug("in=replay at=deliver {} {}", processorId, sequenceNr)
-                            }
-                        }
-                    }
-                }
-                replayBatch.batch.size()
-            }.flatMap {
-              last =>
-                log.debug(s"in=replay for=$processorId, finalizing, last=$last")
-                if (last < maxDynamoBatchGet * replayParallelism || delivered >= max || maxDeliveredSeq >= highSeqNr) {
-                  log.debug("in=replay done. success.")
-                  Future.successful(())
-                } else {
-                  log.debug(s"**** in=replay rewindow, for=$processorId, last=$last, delivered=$delivered, max=$max, maxDeliveredSeq=$maxDeliveredSeq, highSeqNr=$highSeqNr")
-                  val from = fromSequenceNr + maxDynamoBatchGet * replayParallelism
-                  asyncReplayMessages(processorId, from, toSequenceNr, max - delivered)(replayCallback)
-                }
-            }
+        else {
+          readLowestSequenceNr(processorId).flatMap {
+            lowSeqNr =>
+              val calculatedLowSeqNr = lowSeqNr.max(fromSequenceNr)
+              log.debug(s"in=replay for=$processorId, lowSeqNr=$lowSeqNr, recalculatedLowSeqNr=$calculatedLowSeqNr")
+              log.debug("in=replay for={}, from={}, to={}", processorId, lowSeqNr, highSeqNr)
+              getReplayBatch(processorId, calculatedLowSeqNr, highSeqNr).map {
+                replayBatch =>
+                  replayBatch.keys.foreach {
+                    case (sequenceNr, key) =>
+                      val k = key.get(Key)
+                      Option(replayBatch.batch.get(k)).map {
+                        item =>
+                          val repr = readPersistentRepr(item)
+                          repr.foreach {
+                            r =>
+                              if (delivered < max && maxDeliveredSeq < highSeqNr) {
+                                replayCallback(r)
+                                delivered += 1
+                                maxDeliveredSeq = r.sequenceNr
+                                log.debug("in=replay at=deliver {} {}", processorId, sequenceNr)
+                              }
+                          }
+                      }
+                  }
+                  replayBatch.batch.size()
+              }.flatMap {
+                last =>
+                  log.debug(s"in=replay for=$processorId, finalizing, last=$last")
+                  if (last < maxDynamoBatchGet * replayParallelism || delivered >= max || maxDeliveredSeq >= highSeqNr) {
+                    log.debug("in=replay done. success.")
+                    Future.successful(())
+                  } else {
+                    log.debug(s"**** in=replay rewindow, for=$processorId, last=$last, delivered=$delivered, max=$max, maxDeliveredSeq=$maxDeliveredSeq, highSeqNr=$highSeqNr")
+                    val from = fromSequenceNr + maxDynamoBatchGet * replayParallelism
+                    asyncReplayMessages(processorId, from, toSequenceNr, max - delivered)(replayCallback)
+                  }
+              }
+          }
         }
     }
   }
