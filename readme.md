@@ -6,6 +6,11 @@ A replicated [Akka Persistence](http://doc.akka.io/docs/akka/2.3.0-RC3/scala/per
 
 Scala: `2.10.4` and `2.11.1`  Akka: `2.3.3`
 
+Important Notice
+----------------
+
+***Further development of this plugin has moved to the Akka organization, please file issues and submit pull requests against [akka/akka-persistence-dynamodb](https://github.com/akka/akka-persistence-dynamodb).*** In particular you will find versions built for current versions of Scala and Akka at the new location, published under the `com.typesafe.akka` groupId.
+
 Installation
 ------------
 
