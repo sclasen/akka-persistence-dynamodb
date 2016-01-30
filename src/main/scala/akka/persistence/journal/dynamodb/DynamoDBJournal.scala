@@ -1,25 +1,26 @@
 package akka.persistence.journal.dynamodb
 
-import DynamoDBJournal._
+import java.nio.ByteBuffer
+import java.util.{HashMap => JHMap, Map => JMap}
+
 import akka.actor.{ActorLogging, ActorRefFactory, ActorSystem}
-import akka.persistence._
 import akka.persistence.journal.AsyncWriteJournal
+import akka.persistence.{AtomicWrite, Persistence, PersistentRepr}
 import akka.serialization.SerializationExtension
 import akka.util.ByteString
 import com.amazonaws.AmazonServiceException
+import com.amazonaws.auth.BasicAWSCredentials
+import com.amazonaws.services.dynamodbv2.AmazonDynamoDBClient
 import com.amazonaws.services.dynamodbv2.model._
-import com.sclasen.spray.aws.dynamodb.DynamoDBClient
-import com.sclasen.spray.aws.dynamodb.DynamoDBClientProps
 import com.typesafe.config.Config
-import java.nio.ByteBuffer
-import java.util.concurrent.TimeUnit
-import java.util.{HashMap => JHMap, Map => JMap}
+
 import scala.collection.immutable
-import scala.concurrent.Future
-import scala.concurrent.duration._
+import scala.concurrent.{ExecutionContext, Future}
+import scala.util.Try
 
 class DynamoDBJournal extends AsyncWriteJournal with DynamoDBRecovery with DynamoDBRequests with ActorLogging {
 
+  import DynamoDBJournal._
   val config = context.system.settings.config.getConfig(Conf)
   val extension = Persistence(context.system)
   val serialization = SerializationExtension(context.system)
@@ -33,25 +34,33 @@ class DynamoDBJournal extends AsyncWriteJournal with DynamoDBRecovery with Dynam
   type Item = JMap[String, AttributeValue]
   type ItemUpdates = JMap[String, AttributeValueUpdate]
 
-  def asyncWriteMessages(messages: immutable.Seq[PersistentRepr]): Future[Unit] = writeMessages(messages)
+  def asyncWriteMessages(messages: immutable.Seq[AtomicWrite]): Future[immutable.Seq[Try[Unit]]] =
+    Future.sequence(messages.map(writeMessages))
 
-  //do we need to store the confirmations in a separate key to avoid hot keys?
-  def asyncWriteConfirmations(confirmations: immutable.Seq[PersistentConfirmation]): Future[Unit] = writeConfirmations(confirmations)
+  /**
+   * Deletes all messagesIds for a given persistenceId
+   *
+   * Note: PersistentId used to be a type with processorId, sequenceNr, persistenceId.  That type no longer
+   * exists in Akka 2.4.
+   */
+  def asyncDeleteMessages(persistenceId:String, messageIds: immutable.Seq[Long]): Future[Unit] =
+    deleteMessages(persistenceId, messageIds)
 
-  def asyncDeleteMessages(messageIds: immutable.Seq[PersistentId], permanent: Boolean): Future[Unit] = deleteMessages(messageIds, permanent)
-
-  def asyncDeleteMessagesTo(processorId: String, toSequenceNr: Long, permanent: Boolean): Future[Unit] = {
-    log.debug("at=delete-messages-to processorId={} to={} perm={}", processorId, toSequenceNr, permanent)
-    readLowestSequenceNr(processorId).flatMap {
+  // Removed "permanent" as that is no longer used in Akka 2.4
+  def asyncDeleteMessagesTo(persistenceId: String, toSequenceNr: Long): Future[Unit] = {
+    log.debug("at=delete-messages-to processorId={} to={} perm={}", persistenceId, toSequenceNr)
+    readLowestSequenceNr(persistenceId).flatMap {
       fromSequenceNr =>
-        val asyncDeletions = (fromSequenceNr to toSequenceNr).grouped(extension.settings.journal.maxDeletionBatchSize).map {
+        // TODO: maxDeleteBatchSize is gone, we need to configure that ourselves, add to our config section
+        val asyncDeletions = (fromSequenceNr to toSequenceNr).grouped(12).map {
           group =>
-            asyncDeleteMessages(group.map(sequenceNr => PersistentIdImpl(processorId, sequenceNr)), permanent)
+            asyncDeleteMessages(persistenceId, group)
         }
-        Future.sequence(asyncDeletions).map(_ => log.debug("finished asyncDeleteMessagesTo {} {} {}", processorId, toSequenceNr, permanent))
+        Future.sequence(asyncDeletions).map(_ => log.debug("finished asyncDeleteMessagesTo {} {} {}", persistenceId, toSequenceNr))
     }
   }
 
+  // Maps a sequence of tuples to a hashmap
   def fields[T](fs: (String, T)*): JMap[String, T] = {
     val map = new JHMap[String, T]()
     fs.foreach {
@@ -115,17 +124,19 @@ class DynamoDBJournal extends AsyncWriteJournal with DynamoDBRecovery with Dynam
     f.onFailure {
       case e: Exception =>
         log.error(e, "error in async op")
-        e.printStackTrace
+        e.printStackTrace()
     }
     f
   }
-
 }
 
-class InstrumentedDynamoDBClient(props: DynamoDBClientProps) extends DynamoDBClient(props) {
+class InstrumentedDynamoDBClient(val dynamoDB:AmazonDynamoDBClient, system:ActorSystem) extends DynamoDBHelper {
+
+  implicit val ec:ExecutionContext = system.dispatcher
+
   def logging[T](op: String)(f: Future[Either[AmazonServiceException, T]]): Future[Either[AmazonServiceException, T]] = {
     f.onFailure {
-      case e: Exception => props.system.log.error(e, "error in async op {}", op)
+      case e: Exception => system.log.error(e, "error in async op {}", op)
     }
     f
   }
@@ -164,17 +175,13 @@ object DynamoDBJournal {
   val schema = Seq(new KeySchemaElement().withKeyType(KeyType.HASH).withAttributeName(Key)).asJava
   val schemaAttributes = Seq(new AttributeDefinition().withAttributeName(Key).withAttributeType("S")).asJava
 
-  def dynamoClient(system: ActorSystem, context: ActorRefFactory, config: Config): DynamoDBClient = {
-    val props = DynamoDBClientProps(
-      config.getString(AwsKey),
-      config.getString(AwsSecret),
-      config.getDuration(OpTimeout, TimeUnit.MILLISECONDS) milliseconds,
-      system,
-      context,
-      config.getString(Endpoint)
-    )
-    new InstrumentedDynamoDBClient(props)
+  def dynamoClient(system: ActorSystem, context: ActorRefFactory, config: Config): DynamoDBHelper = {
+
+    implicit val ec:ExecutionContext = system.dispatcher
+    val creds = new BasicAWSCredentials(config.getString(AwsKey), config.getString(AwsSecret))
+    val client = new AmazonDynamoDBClient(creds)
+    client.setEndpoint(config.getString(Endpoint))
+
+    new InstrumentedDynamoDBClient(client, system)
   }
-
-
 }

@@ -2,31 +2,27 @@ organization := "com.sclasen"
 
 name := "akka-persistence-dynamodb"
 
-version := "0.3.4-SNAPSHOT"
+version := "0.4.0-SNAPSHOT"
 
-scalaVersion := "2.11.1"
-
-crossScalaVersions := Seq("2.11.1", "2.10.4")
+scalaVersion := "2.11.7"
 
 parallelExecution in Test := false
 
-//resolvers += "Sonatype OSS Snapshots" at "https://oss.sonatype.org/content/repositories/snapshots"
-
 resolvers += "spray repo" at "http://repo.spray.io"
 
-libraryDependencies += "com.sclasen" %% "spray-dynamodb" % "0.3.2" % "compile"
+libraryDependencies += "com.amazonaws" % "aws-java-sdk-core" % "1.10.20"
 
-libraryDependencies += "com.typesafe.akka" %% "akka-persistence-experimental" % "2.3.4" % "compile"
+libraryDependencies += "com.amazonaws" % "aws-java-sdk-dynamodb" % "1.10.20"
 
-libraryDependencies += "com.typesafe.akka" %% "akka-testkit" % "2.3.4" % "test,it"
+libraryDependencies += "com.typesafe.akka" %% "akka-persistence" % "2.4.0" % "compile"
+
+libraryDependencies += "com.typesafe.akka" %% "akka-persistence-tck" % "2.4.0" % "test,it"
+
+libraryDependencies += "com.typesafe.akka" %% "akka-testkit" % "2.4.0" % "test,it"
 
 libraryDependencies += "org.scalatest" %% "scalatest" % "2.1.7" % "test,it"
 
 libraryDependencies += "commons-io" % "commons-io" % "2.4" % "test,it"
-
-resolvers += "krasserm at bintray" at "http://dl.bintray.com/krasserm/maven"
-
-libraryDependencies += "com.github.krasserm" %% "akka-persistence-testkit" % "0.3.2" % "test"
 
 parallelExecution in Test := false
 

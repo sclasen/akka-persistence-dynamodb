@@ -1,10 +1,10 @@
 DynamoDBJournal for Akka Persistence
 ====================================
 
-A replicated [Akka Persistence](http://doc.akka.io/docs/akka/2.3.0-RC3/scala/persistence.html) journal backed by
+A replicated [Akka Persistence](http://doc.akka.io/docs/akka/2.4.0/scala/persistence.html) journal backed by
 [Amazon DynamoDB](http://aws.amazon.com/dynamodb/).
 
-Scala: `2.10.4` and `2.11.1`  Akka: `2.3.3`
+Scala: `2.11.7`  Akka: `2.4.0`
 
 Important Notice
 ----------------
@@ -20,7 +20,7 @@ Installation
 
 resolvers += "Sonatype OSS Snapshots" at "https://oss.sonatype.org/content/repositories/snapshots"
 
-libraryDependencies += "com.sclasen" %% "akka-persistence-dynamodb" % "0.3.4" % "compile"
+libraryDependencies += "com.sclasen" %% "akka-persistence-dynamodb" % "0.4.0" % "compile"
 
 ```
 
@@ -63,23 +63,8 @@ Development
 
 ### dev setup
 
-* install [forego](https://github.com/ddollar/forego) if you dont have it.
-
-* run `bin/get-dynamodb-local`
-
-this downloads and unpacks the dynamodb local to a subdir of ./dynamodb-local
-
-* `cp .env.sample .env`
-
-* make sure the DYNAMODB_RELEASE var in .env matches the date of the distro that was placed in ./dynamodb-local
-
-* `forego start`
-
-This starts the local dynamodb instance
-
-In another shell
-
-* forego run sbt test
+* run `integration-test.sh` to run the integration tests.  This will download dynamodb local if it is not already 
+installed, start up dynamo, and then run the integration tests to validate the plugin.
 
 ### dynamodb table structure discussion
 
