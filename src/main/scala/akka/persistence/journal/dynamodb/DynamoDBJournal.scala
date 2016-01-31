@@ -7,6 +7,8 @@ import akka.persistence.journal.AsyncWriteJournal
 import akka.serialization.SerializationExtension
 import akka.util.ByteString
 import com.amazonaws.AmazonServiceException
+import com.amazonaws.auth.{BasicAWSCredentials, InstanceProfileCredentialsProvider, AWSCredentialsProvider}
+import com.amazonaws.internal.StaticCredentialsProvider
 import com.amazonaws.services.dynamodbv2.model._
 import com.sclasen.spray.aws.dynamodb.DynamoDBClient
 import com.sclasen.spray.aws.dynamodb.DynamoDBClientProps
@@ -164,10 +166,18 @@ object DynamoDBJournal {
   val schema = Seq(new KeySchemaElement().withKeyType(KeyType.HASH).withAttributeName(Key)).asJava
   val schemaAttributes = Seq(new AttributeDefinition().withAttributeName(Key).withAttributeType("S")).asJava
 
+  def provider(system: ActorSystem, config: Config): AWSCredentialsProvider = {
+    if (!config.hasPath(AwsKey) || config.getString(AwsKey).isEmpty) {
+      system.log.info("Using InstanceProfileCredentialsProvider")
+      new InstanceProfileCredentialsProvider
+    }
+    else
+      new StaticCredentialsProvider(new BasicAWSCredentials(config.getString(AwsKey), config.getString(AwsSecret)))
+  }
+
   def dynamoClient(system: ActorSystem, context: ActorRefFactory, config: Config): DynamoDBClient = {
     val props = DynamoDBClientProps(
-      config.getString(AwsKey),
-      config.getString(AwsSecret),
+      provider(system, config),
       config.getDuration(OpTimeout, TimeUnit.MILLISECONDS) milliseconds,
       system,
       context,
